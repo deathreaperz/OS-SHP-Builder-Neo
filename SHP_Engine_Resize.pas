@@ -29,13 +29,13 @@ procedure Resize_FrameImage_MSPaint(var Input: TFrameImage;
 
 implementation
 
-uses FormMain;
+uses FormMain, SysUtils, Classes;
 
 procedure Resize_Frame_Blocky(var SHP: TSHP; Frame, Width, Height: integer);
 var
    cx, cy: integer; {current x and y, used as pointer for output.}
    x, y:   integer; {counter x and y for input}
-   Output: array of array of byte;
+   Output: TFrameImage;
    {this is a temporary matrix with the results, so I can have a reference of the original input}
    xmult, ymult: real; {multiplier of the width and height respectivelly}
    bx, by: integer;    {counters used when increasing X or Y to fill the gaps}
@@ -178,11 +178,8 @@ begin
       end;
    end;
 
-   // Now, save the output in the SHP file.
-   SetLength(SHP.Data[Frame].FrameImage, Width + 1, Height + 1);
-   for y := 0 to Height do
-      for x := 0 to Width do
-         SHP.Data[Frame].FrameImage[x, y] := Output[x, y];
+   // Now, save the output in the SHP file (dynamic-array assignment, no reallocation/copy needed).
+   SHP.Data[Frame].FrameImage := Output;
 end;
 
 procedure Resize_Frames_Blocky(var SHP: TSHP; Width, Height: integer);
@@ -222,6 +219,8 @@ var
    x, y:   integer; {counter x and y for input}
    Output: array of array of TColor;
    {this is a temporary matrix with the results, so I can have a reference of the original input}
+   SourceCache: array of array of TColor; {source pixels, cached once instead of via slow Canvas.Pixels}
+   Row: PByteArray;
    xmult, ymult: real; {multiplier of the width and height respectivelly}
    bx, by: integer;    {counters used when increasing X or Y to fill the gaps}
    maxcx, maxcy: integer; {reference to max cx and cy when increasing X or Y}
@@ -232,6 +231,17 @@ begin
    ymult := Height / Bitmap.Height;
 
    SetLength(Output, Width + 1, Height + 1); {now output has memory alocated to it :)}
+
+   // Cache the source pixels once via Scanline (Canvas.Pixels does a slow GDI call per pixel).
+   Bitmap.PixelFormat := pf24bit;
+   SetLength(SourceCache, Bitmap.Width, Bitmap.Height);
+   for y := 0 to Bitmap.Height - 1 do
+   begin
+      Row := Bitmap.Scanline[y];
+      for x := 0 to Bitmap.Width - 1 do
+         SourceCache[x, y] := RGB(Row[x * 3 + 2], Row[x * 3 + 1], Row[x * 3]);
+   end;
+
    {This will be the blocky mode, the crappiest, but most versatile method so far}
    // Blocky Mode begins...
 
@@ -255,7 +265,7 @@ begin
             for x := 0 to Bitmap.Width - 1 do
             begin
                cx := round(x * xmult);
-               Output[cx, cy] := Bitmap.Canvas.Pixels[x, y];
+               Output[cx, cy] := SourceCache[x, y];
             end;
          end;
       end
@@ -284,7 +294,7 @@ begin
                for x := 0 to Bitmap.Width - 1 do
                begin
                   cx := round(x * xmult);
-                  Output[cx, cy + by] := Bitmap.Canvas.Pixels[x, y];
+                  Output[cx, cy + by] := SourceCache[x, y];
                end;
                Inc(by);
             end;
@@ -318,7 +328,7 @@ begin
                while ((cx + bx) <= maxcx) do
                   // copy the current line to the position until it reachs the max cx
                begin
-                  Output[cx + bx, cy] := Bitmap.Canvas.Pixels[x, y];
+                  Output[cx + bx, cy] := SourceCache[x, y];
                   Inc(bx);
                end;
             end;
@@ -353,7 +363,7 @@ begin
                   while ((cx + bx) <= maxcx) do
                      // copy the current line to the position until it reachs the max cx
                   begin
-                     Output[cx + bx, cy + by] := Bitmap.Canvas.Pixels[x, y];
+                     Output[cx + bx, cy + by] := SourceCache[x, y];
                      Inc(bx);
                   end;
                end;
@@ -363,12 +373,20 @@ begin
       end;
    end;
 
-   // Now, save the output in the Bitmap file.
+   // Now, save the output in the Bitmap file via Scanline (Canvas.Pixels does a slow GDI call per pixel).
    Bitmap.Height := Height + 1;
    Bitmap.Width  := Width + 1;
+   Bitmap.PixelFormat := pf24bit;
    for y := 0 to Height do
+   begin
+      Row := Bitmap.Scanline[y];
       for x := 0 to Width do
-         Bitmap.Canvas.Pixels[x, y] := Output[x, y];
+      begin
+         Row[x * 3]     := GetBValue(Output[x, y]);
+         Row[x * 3 + 1] := GetGValue(Output[x, y]);
+         Row[x * 3 + 2] := GetRValue(Output[x, y]);
+      end;
+   end;
 end;
 
 procedure Resize_FrameImage_Blocky(var Input: TFrameImage;
@@ -376,7 +394,7 @@ procedure Resize_FrameImage_Blocky(var Input: TFrameImage;
 var
    cx, cy: integer; {current x and y, used as pointer for output.}
    x, y:   integer; {counter x and y for input}
-   Output: array of array of byte;
+   Output: TFrameImage;
    {this is a temporary matrix with the results, so I can have a reference of the original input}
    xmult, ymult: real; {multiplier of the width and height respectivelly}
    bx, by: integer;    {counters used when increasing X or Y to fill the gaps}
@@ -519,11 +537,8 @@ begin
       end;
    end;
 
-   // Now, save the output in the FrameImage variable.
-   SetLength(Input, Width + 1, Height + 1);
-   for y := 0 to Height do
-      for x := 0 to Width do
-         Input[x, y] := Output[x, y];
+   // Now, save the output in the FrameImage variable (dynamic-array assignment, no copy needed).
+   Input := Output;
 end;
 
 // Yes, it is that simple!!!

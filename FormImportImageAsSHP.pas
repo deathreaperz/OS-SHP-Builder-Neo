@@ -377,20 +377,46 @@ end;
 
 Function GrayBitmap(var Bitmap:TBitmap; const x,y : integer) : Tbitmap;
 var
-   Temp : Tbitmap;
+   Temp, Source : Tbitmap;
    xx,yy : integer;
+   SrcRow, DstRow : PByteArray;
+   Gray : byte;
 begin
-   Temp := TBitmap.Create;
+   // Read via a pf24bit copy + Scanline instead of Canvas.Pixels (avoids mutating the caller's Bitmap).
+   Source := TBitmap.Create;
+   try
+      Source.Assign(Bitmap);
+      Source.PixelFormat := pf24bit;
 
-   Temp.Width := Bitmap.Width;
-   Temp.Height := Bitmap.Height;
+      Temp := TBitmap.Create;
+      Temp.PixelFormat := pf24bit;
+      Temp.Width := Bitmap.Width;
+      Temp.Height := Bitmap.Height;
 
-   for xx := 0 to Bitmap.Width-1 do
-   for yy := 0 to Bitmap.Height-1 do
-   if ((xx <> x) and (yy <> y)) or ((xx = x) and (yy = y)) then
-      Temp.Canvas.Pixels[xx,yy] := Bitmap.Canvas.Pixels[xx,yy]
-   else
-      Temp.Canvas.Pixels[xx,yy] := colourtogray(Bitmap.Canvas.Pixels[xx,yy]);
+      for yy := 0 to Bitmap.Height-1 do
+      begin
+         SrcRow := Source.Scanline[yy];
+         DstRow := Temp.Scanline[yy];
+         for xx := 0 to Bitmap.Width-1 do
+         begin
+            if ((xx <> x) and (yy <> y)) or ((xx = x) and (yy = y)) then
+            begin
+               DstRow[xx * 3]     := SrcRow[xx * 3];
+               DstRow[xx * 3 + 1] := SrcRow[xx * 3 + 1];
+               DstRow[xx * 3 + 2] := SrcRow[xx * 3 + 2];
+            end
+            else
+            begin
+               Gray := (SrcRow[xx * 3] * 29 + SrcRow[xx * 3 + 1] * 150 + SrcRow[xx * 3 + 2] * 77) div 256;
+               DstRow[xx * 3]     := Gray;
+               DstRow[xx * 3 + 1] := Gray;
+               DstRow[xx * 3 + 2] := Gray;
+            end;
+         end;
+      end;
+   finally
+      Source.Free;
+   end;
 
    Result := Temp;
 end;

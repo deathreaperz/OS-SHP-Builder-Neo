@@ -150,15 +150,14 @@ begin
       for x := SHP.Header.NumImages downto Frame do
       begin
          for xx := 0 to SHP.Header.Width - 1 do
-            for yy := 0 to SHP.Header.Height - 1 do
-               SHP.Data[x].FrameImage[xx, yy] := SHP.Data[x - 1].FrameImage[xx, yy];
+            SHP.Data[x].FrameImage[xx] := Copy(SHP.Data[x - 1].FrameImage[xx]);
       end;
    end;
 end;
 
 procedure MoveFrameImagesDown(var SHP: TSHP; const Frame: integer);
 var
-   x, xx, yy: integer;
+   x, xx: integer;
 begin
    if Frame < 1 then
       exit;
@@ -170,8 +169,7 @@ begin
       for x := Frame to SHP.Header.NumImages - 1 do
       begin
          for xx := 0 to SHP.Header.Width - 1 do
-            for yy := 0 to SHP.Header.Height - 1 do
-               SHP.Data[x].FrameImage[xx, yy] := SHP.Data[x + 1].FrameImage[xx, yy];
+            SHP.Data[x].FrameImage[xx] := Copy(SHP.Data[x + 1].FrameImage[xx]);
       end;
 
    SHP.Header.NumImages := SHP.Header.NumImages - 1;
@@ -180,7 +178,7 @@ end;
 
 procedure SwapFrameImages(var SHP: TSHP; const Frame1, Frame2: integer);
 var
-   x, xx, yy: integer;
+   x, xx: integer;
    minframe, maxframe: integer;
    TempFrame: TFrameImage;
 begin
@@ -198,21 +196,18 @@ begin
    // Copy maxframe in a temp frame.
    setlength(TempFrame, SHP.Header.Width, SHP.Header.Height);
    for xx := 0 to SHP.Header.Width - 1 do
-      for yy := 0 to SHP.Header.Height - 1 do
-         TempFrame[xx, yy] := SHP.Data[maxframe].FrameImage[xx, yy];
+      TempFrame[xx] := Copy(SHP.Data[maxframe].FrameImage[xx]);
 
    // Move stuff
    for x := MaxFrame downto MinFrame + 1 do
    begin
       for xx := 0 to SHP.Header.Width - 1 do
-         for yy := 0 to SHP.Header.Height - 1 do
-            SHP.Data[x].FrameImage[xx, yy] := SHP.Data[x - 1].FrameImage[xx, yy];
+         SHP.Data[x].FrameImage[xx] := Copy(SHP.Data[x - 1].FrameImage[xx]);
    end;
 
    // copy tempframe at minframe
    for xx := 0 to SHP.Header.Width - 1 do
-      for yy := 0 to SHP.Header.Height - 1 do
-         SHP.Data[minframe].FrameImage[xx, yy] := TempFrame[xx, yy];
+      SHP.Data[minframe].FrameImage[xx] := Copy(TempFrame[xx]);
 end;
 
 
@@ -245,10 +240,13 @@ function GetBMPOfFrameImage(const SHP: TSHP; Frame: integer;
 var
    BMP:  TBitmap;
    x, y: integer;
+   Row: PByteArray;
+   PixelValue: byte;
 begin
    BMP := TBitmap.Create;
    //Result := BMP; // Assume Worst Case
 
+   BMP.PixelFormat := pf24bit; // enables the fast Scanline access below
 
    // Set image width n height
    BMP.Width  := SHP.header.Width;
@@ -258,15 +256,22 @@ begin
    BMP.Canvas.Brush.Color := palette[TRANSPARENT];
    BMP.Canvas.FillRect(rect(0, 0, BMP.Width, BMP.Height));
 
-   // Populate the image pixel by pixel
+   // Populate the image via Scanline (Canvas.Pixels does a slow GDI round trip per pixel)
    for y := 0 to SHP.header.Height - 1 do
+   begin
+      Row := BMP.Scanline[y];
       for x := 0 to SHP.header.Width - 1 do
       begin
-
-         if shp.Data[Frame].frameimage[x, y] <> TRANSPARENT then
+         PixelValue := shp.Data[Frame].frameimage[x, y];
+         if PixelValue <> TRANSPARENT then
             // Stops it drawing transparent colours, stops shadows oposite form drawing over shadow
-            BMP.Canvas.Pixels[x, y] := palette[shp.Data[Frame].frameimage[x, y]];
+         begin
+            Row[x * 3]     := GetBValue(palette[PixelValue]);
+            Row[x * 3 + 1] := GetGValue(palette[PixelValue]);
+            Row[x * 3 + 2] := GetRValue(palette[PixelValue]);
+         end;
       end;
+   end;
 
    Result := BMP;
 
@@ -277,10 +282,13 @@ function GetBMPOfFrameImage(const Frame: TFrameImage;
 var
    BMP:  TBitmap;
    x, y: integer;
+   Row: PByteArray;
+   PixelValue: byte;
 begin
    BMP := TBitmap.Create;
    //Result := BMP; // Assume Worst Case
 
+   BMP.PixelFormat := pf24bit; // enables the fast Scanline access below
 
    // Set image width n height
    BMP.Width  := Width;
@@ -290,15 +298,22 @@ begin
    BMP.Canvas.Brush.Color := palette[TRANSPARENT];
    BMP.Canvas.FillRect(rect(0, 0, BMP.Width, BMP.Height));
 
-   // Populate the image pixel by pixel
+   // Populate the image via Scanline (Canvas.Pixels does a slow GDI round trip per pixel)
    for y := 0 to Height - 1 do
+   begin
+      Row := BMP.Scanline[y];
       for x := 0 to Width - 1 do
       begin
-
-         if Frame[x, y] <> TRANSPARENT then
+         PixelValue := Frame[x, y];
+         if PixelValue <> TRANSPARENT then
             // Stops it drawing transparent colours, stops shadows oposite form drawing over shadow
-            BMP.Canvas.Pixels[x, y] := palette[Frame[x, y]];
+         begin
+            Row[x * 3]     := GetBValue(palette[PixelValue]);
+            Row[x * 3 + 1] := GetGValue(palette[PixelValue]);
+            Row[x * 3 + 2] := GetRValue(palette[PixelValue]);
+         end;
       end;
+   end;
 
    Result := BMP;
 
@@ -309,9 +324,12 @@ function GetBMPOfFrameImage_ShadowColour(const SHP: TSHP; Frame: integer;
 var
    BMP:  TBitmap;
    x, y: integer;
+   Row: PByteArray;
+   ShadowB, ShadowG, ShadowR: byte;
 begin
    BMP := TBitmap.Create;
 
+   BMP.PixelFormat := pf24bit; // enables the fast Scanline access below
 
    // Set image width n height
    BMP.Width  := SHP.header.Width;
@@ -321,15 +339,26 @@ begin
    BMP.Canvas.Brush.Color := palette[0];
    BMP.Canvas.FillRect(rect(0, 0, BMP.Width, BMP.Height));
 
-   // Populate the image pixel by pixel
+   // Pre-compute the shadow colour once instead of per pixel.
+   ShadowB := GetBValue(palette[shadowcolour]);
+   ShadowG := GetGValue(palette[shadowcolour]);
+   ShadowR := GetRValue(palette[shadowcolour]);
+
+   // Populate the image via Scanline (Canvas.Pixels does a slow GDI round trip per pixel)
    for y := 0 to SHP.header.Height - 1 do
+   begin
+      Row := BMP.Scanline[y];
       for x := 0 to SHP.header.Width - 1 do
       begin
-
          if shp.Data[Frame].frameimage[x, y] <> 0 then
             // Stops it drawing transparent colours, stops shadows oposite form drawing over shadow
-            BMP.Canvas.Pixels[x, y] := palette[shadowcolour];
+         begin
+            Row[x * 3]     := ShadowB;
+            Row[x * 3 + 1] := ShadowG;
+            Row[x * 3 + 2] := ShadowR;
+         end;
       end;
+   end;
 
    Result := BMP;
 end;
