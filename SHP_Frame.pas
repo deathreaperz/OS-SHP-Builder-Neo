@@ -85,7 +85,7 @@ end;
 // 3.35: Imported from 3.4 to allow import on existing SHP.
 procedure MoveSeveralFrameImagesUp(var SHP: TSHP; const Frame, Ammount: integer);
 var
-   x, xx, yy: integer;
+   x, xx: integer;
 begin
    // Basic Check Up
    if Frame < 1 then
@@ -101,29 +101,27 @@ begin
       SetLength(SHP.Data[SHP.Header.NumImages - x].FrameImage, SHP.Header.Width, SHP.Header.Height);
    end;
 
-   // Move stuff
+   // Move stuff (per-column block copy instead of one byte at a time)
    for x := SHP.Header.NumImages downto (Frame + Ammount) do
    begin
       for xx := 0 to SHP.Header.Width - 1 do
-         for yy := 0 to SHP.Header.Height - 1 do
-            SHP.Data[x].FrameImage[xx, yy] := SHP.Data[x - Ammount].FrameImage[xx, yy];
+         SHP.Data[x].FrameImage[xx] := Copy(SHP.Data[x - Ammount].FrameImage[xx]);
    end;
 end;
 
 procedure MoveSeveralFrameImagesDown(var SHP: TSHP; const Frame, Ammount: integer);
 var
-   x, xx, yy: integer;
+   x, xx: integer;
 begin
    // Basic Check Up
    if (Frame < 1) or (Frame > (SHP.Header.NumImages + Ammount)) then
       exit;
 
-   // Move stuff
+   // Move stuff (per-column block copy instead of one byte at a time)
    for x := Frame to SHP.Header.NumImages - Ammount do
    begin
       for xx := 0 to SHP.Header.Width - 1 do
-         for yy := 0 to SHP.Header.Height - 1 do
-            SHP.Data[x].FrameImage[xx, yy] := SHP.Data[x + Ammount].FrameImage[xx, yy];
+         SHP.Data[x].FrameImage[xx] := Copy(SHP.Data[x + Ammount].FrameImage[xx]);
    end;
 
    // Ajust Data
