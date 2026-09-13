@@ -61,8 +61,9 @@ end;
 function LoadSHP(const Filename: string; var SHP: TSHP): boolean;
 var
    f:      TStream;
-   x: integer;
+   x, c: integer;
    Databuffer: TDatabuffer;
+   PDatabuffer, PCurrentData: PByte;
    Image_Size: integer;
    NextOffset: longint;
 begin
@@ -144,9 +145,15 @@ begin
                   (SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy) + 1);
                setlength(Databuffer, Image_Size);
                F.Seek(SHP.Data[x].header_image.offset, soFromBeginning);
-               // Read the whole block in one go, straight into the buffer.
-               if Image_Size > 0 then
-                  F.Read(Databuffer[0], Image_Size);
+               // Read byte per byte from one offset to the other.
+               GetMem(PDataBuffer, Image_Size);
+               F.Read(PDatabuffer^, Image_Size);
+               PCurrentData := PDataBuffer;
+               for c := 0 to Image_Size - 1 do
+               begin
+                  Databuffer[c] := PCurrentData^;
+                  Inc(PCurrentData);
+               end;
                // decode it
                Decode3(Databuffer, SHP.Data[x].Databuffer,
                   SHP.Data[x].header_image.cx, SHP.Data[x].header_image.cy, Image_Size); // Compression 3
@@ -157,9 +164,17 @@ begin
                F.Seek(SHP.Data[x].header_image.offset, soFromBeginning);
                Image_Size := F.Size - F.Position - 1;
                setlength(Databuffer, Image_Size);
+               GetMem(PDatabuffer, Image_Size);
                if Image_Size > 0 then
                begin
-                  F.Read(Databuffer[0], Image_Size);
+                  F.Read(PDatabuffer^, Image_Size);
+               end;
+               // Copy PDatabuffer bytes into SHP Databuffer
+               PCurrentData := PDataBuffer;
+               for c := 0 to Image_Size - 1 do
+               begin
+                  Databuffer[c] := PCurrentData^;
+                  Inc(PCurrentData);
                end;
                // Set the lengths of the other data buffers
                setlength(SHP.Data[x].Databuffer,
@@ -183,9 +198,15 @@ begin
                   (SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy) + 1);
                setlength(Databuffer, Image_Size);
                F.Seek(SHP.Data[x].header_image.offset, soFromBeginning);
-               // Read the whole block in one go, straight into the buffer.
-               if Image_Size > 0 then
-                  F.Read(Databuffer[0], Image_Size);
+               // Read byte per byte from one offset to the other.
+               GetMem(PDataBuffer, Image_Size);
+               F.Read(PDatabuffer^, Image_Size);
+               PCurrentData := PDataBuffer;
+               for c := 0 to Image_Size - 1 do
+               begin
+                  Databuffer[c] := PCurrentData^;
+                  Inc(PCurrentData);
+               end;
                // decode it
                Decode2(Databuffer, SHP.Data[x].Databuffer, SHP.Data[x].header_image.cx, SHP.Data[x].header_image.cy, Image_Size); // Compression 3
             end
@@ -195,9 +216,17 @@ begin
                F.Seek(SHP.Data[x].header_image.offset, soFromBeginning);
                Image_Size := F.Size - F.Position - 1;
                setlength(Databuffer, Image_Size);
+               GetMem(PDatabuffer, Image_Size);
                if Image_Size > 0 then
                begin
-                  F.Read(Databuffer[0], Image_Size);
+                  F.Read(PDatabuffer^, Image_Size);
+               end;
+               // Copy PDatabuffer bytes into SHP Databuffer
+               PCurrentData := PDataBuffer;
+               for c := 0 to Image_Size - 1 do
+               begin
+                  Databuffer[c] := PCurrentData^;
+                  Inc(PCurrentData);
                end;
                // Set the lengths of the other data buffers
                setlength(SHP.Data[x].Databuffer,
@@ -213,10 +242,17 @@ begin
             // Set the lengths of the data buffers
             setlength(SHP.Data[x].Databuffer, Image_Size);
             F.Seek(SHP.Data[x].header_image.offset, soFromBeginning);
-            // Read the raw pixel data straight into the destination buffer.
-            if Image_Size > 0 then
-               F.Read(SHP.Data[x].Databuffer[0], Image_Size);
+            // Read byte per byte from one offset to the other.
+            GetMem(PDatabuffer, Image_Size);
+            F.Read(PDataBuffer^, Image_Size);
+            PCurrentData := PDataBuffer;
+            for c := 0 to Image_Size - 1 do
+            begin
+               SHP.Data[x].Databuffer[c] := PCurrentData^;
+               Inc(PCurrentData);
+            end;
          end;
+         FreeMem(PDatabuffer);
       end;
    end;
    F.Free;
@@ -864,7 +900,7 @@ function LoadSHPSupraFast(Filename: string; var SHP: TSHP): boolean;
 var
    F:    TStream;
    FileSize: longword;
-   x: integer;
+   x, c: integer;
    PData, PCurrentData: PByte;
 begin
    Result := False;
@@ -975,10 +1011,11 @@ begin
          end
          else  // Compression 1
          begin
-            if SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy > 0 then
-               Move(PCurrentData^, SHP.Data[x].Databuffer[0],
-                  SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy);
-            Inc(PCurrentData, SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy);
+            for c := 0 to (SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy) - 1 do
+            begin
+               SHP.Data[x].Databuffer[c] := PCurrentData^;
+               Inc(PCurrentData);
+            end;
          end;
       end;
 
@@ -998,7 +1035,8 @@ end;
 function LoadSHPSafe(Filename: string; var SHP: TSHP): boolean;
 var
    f:      file;
-   Read, x: integer;
+   Read, x, c: integer;
+   colour: byte;
    Databuffer, Databuffer2: TDatabuffer;
    Image_Size: integer;
 begin
@@ -1082,9 +1120,12 @@ begin
       Seek(F, SHP.Data[x].header_image.offset);
       // Goto the Line of the file that contains the start of the image
 
-      // Read the whole block in one go instead of one byte at a time.
-      if Image_Size > 0 then
-         BlockRead(F, Databuffer[0], Image_Size, Read);
+      // Read byte by byte from one offset to the other.
+      for c := 1 to SHP.Data[x].header_image.cy * SHP.Data[x].header_image.cx do
+      begin
+         BlockRead(F, colour, Sizeof(byte), Read);
+         Databuffer[c - 1] := colour;
+      end;
 
 
       // If Compression3 try n decode it else databuffer2 = databuffer
@@ -1134,7 +1175,7 @@ end;
 procedure SaveSHPUncompressed(const Filename: string; var SHP: TSHP); overload;
 var
    f: file;
-   Written, x: integer;
+   Written, x, c: integer;
    Image_Size: cardinal;
 begin
    AssignFile(F, Filename);  // Open file
@@ -1168,9 +1209,12 @@ begin
       // the ammount of bytes in a image (Width * Height)
       Image_Size := SHP.Data[x].header_image.cx * SHP.Data[x].header_image.cy;
 
-      // Write the whole frame in one go instead of one byte at a time.
-      if (SHP.Data[x].Header_Image.offset <> 0) and (Image_Size > 0) then
-         BlockWrite(F, SHP.Data[x].Databuffer[0], Image_Size, Written);
+      // Write byte by byte SHP.Data[x].header_image.cy * SHP.Data[x].header_image.cx times
+      if SHP.Data[x].Header_Image.offset <> 0 then
+         for c := 1 to Image_Size do
+         begin
+            BlockWrite(F, SHP.Data[x].Databuffer[c - 1], Sizeof(byte), Written);
+         end;
    end;
    CloseFile(F);
 end;
@@ -1180,7 +1224,7 @@ end;
 procedure SaveSHP(const Filename: string; var SHP: TSHP); overload;
 var
    F:    file;
-   Written, x: integer;
+   Written, x, c: integer;
    Databuffer2: TDatabuffer;
    size: array of integer;
    CurrentOffset: integer;
@@ -1237,9 +1281,12 @@ begin
    // Save each image to the file
    for x := 1 to SHP.header.NumImages do
    begin
-      // Write the whole frame in one go instead of one byte at a time.
-      if (SHP.Data[x].Header_Image.offset <> 0) and (size[x - 1] > 0) then
-         BlockWrite(F, SHP.Data[x].Databuffer[0], size[x - 1], Written);
+      // Write byte by byte SHP.Data[x].header_image.cy * SHP.Data[x].header_image.cx times
+      if SHP.Data[x].Header_Image.offset <> 0 then
+         for c := 1 to size[x - 1] do// Image_Size do
+         begin
+            BlockWrite(F, SHP.Data[x].Databuffer[c - 1], Sizeof(byte), Written);
+         end;
    end;
 
    CloseFile(F);
@@ -1248,7 +1295,7 @@ end;
 procedure SaveSHPHalfCompression(const Filename: string; var SHP: TSHP); overload;
 var
    F:    file;
-   Written, x: integer;
+   Written, x, c: integer;
    Databuffer2: TDatabuffer;
    size: array of integer;
    CurrentOffset: integer;
@@ -1325,9 +1372,12 @@ begin
    // Save each image to the file
    for x := 1 to SHP.header.NumImages do
    begin
-      // Write the whole frame in one go instead of one byte at a time.
-      if (SHP.Data[x].Header_Image.offset <> 0) and (size[x - 1] > 0) then
-         BlockWrite(F, SHP.Data[x].Databuffer[0], size[x - 1], Written);
+      // Write byte by byte SHP.Data[x].header_image.cy * SHP.Data[x].header_image.cx times
+      if SHP.Data[x].Header_Image.offset <> 0 then
+         for c := 1 to size[x - 1] do// Image_Size do
+         begin
+            BlockWrite(F, SHP.Data[x].Databuffer[c - 1], Sizeof(byte), Written);
+         end;
    end;
 
    CloseFile(F);
@@ -1336,7 +1386,7 @@ end;
 procedure SaveSHPCompressed(const Filename: string; var SHP: TSHP); overload;
 var
    F:    file;
-   Written, x: integer;
+   Written, x, c: integer;
    Databuffer2: TDatabuffer;
    size: array of integer;
    CurrentOffset: integer;
@@ -1378,9 +1428,12 @@ begin
    // Save each image to the file
    for x := 1 to SHP.header.NumImages do
    begin
-      // Write the whole frame in one go instead of one byte at a time.
-      if (SHP.Data[x].Header_Image.offset <> 0) and (Size[x - 1] > 0) then
-         BlockWrite(F, SHP.Data[x].Databuffer[0], Size[x - 1], Written);
+      // Write byte by byte size times
+      if SHP.Data[x].Header_Image.offset <> 0 then
+         for c := 1 to Size[x - 1] do
+         begin
+            BlockWrite(F, SHP.Data[x].Databuffer[c - 1], Sizeof(byte), Written);
+         end;
    end;
 
    CloseFile(F);
@@ -1390,7 +1443,9 @@ procedure CreateFrameImage(var SHP: TSHP; const Frame: integer);
 var
    x, y, xx, yy, c: integer;
 begin
-   // Set FrameImage (SetLength already frees/reallocates the previous buffer)
+   //Clear Frame Image
+   Setlength(SHP.Data[Frame].FrameImage, 0, 0);
+   // Set FrameImage
    Setlength(SHP.Data[Frame].FrameImage, SHP.Header.Width + 1, SHP.Header.Height + 1);
    // Get the position of where to draw the frame from
    xx := SHP.Data[Frame].header_image.x;
@@ -1692,19 +1747,13 @@ end;
 
 procedure FindSHPGame(var SHP: TSHP);
 var
-   Frame, MaxFrame: integer;
-   OffsetSum: int64; // signed+wide: avoids range errors from negative offsets or large sums
+   Frame:     longword;
+   OffsetSum: longword;
 begin
    OffsetSum := 0;
-   // Guard against NumImages 0/1, where (NumImages - 1) would underflow.
-   if SHP.Header.NumImages > 1 then
+   for Frame := ((SHP.Header.NumImages div 2) + 1) to (SHP.Header.NumImages - 1) do
    begin
-      MaxFrame := SHP.Header.NumImages - 1;
-      // Clamp in case Data wasn't sized to match NumImages (e.g. malformed/converted SHPs).
-      if MaxFrame > High(SHP.Data) then
-         MaxFrame := High(SHP.Data);
-      for Frame := (SHP.Header.NumImages div 2) + 1 to MaxFrame do
-         OffsetSum := OffsetSum + SHP.Data[Frame].Header_Image.offset;
+      OffsetSum := OffsetSum + SHP.Data[Frame].Header_Image.offset;
    end;
    if OffsetSum = 0 then
       SHP.SHPGame := sgRA2;
